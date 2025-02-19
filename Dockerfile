@@ -8,4 +8,4 @@ RUN apt-get update && apt-get install -y git \
 FROM ghcr.io/intersectmbo/cardano-db-sync:13.6.0.4
 COPY --from=config /cardano-world/docs/environments /environments
 COPY ./entrypoint.sh ./update_json_keys.sh /
-ENTRYPOINT ["/bin/sh" "-e" "/entrypoint.sh" ]
+ENTRYPOINT ["/bin/bash", "-e", "/entrypoint.sh" ]
