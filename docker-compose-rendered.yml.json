@@ -1,0 +1,113 @@
+{
+  "version": "3.9",
+  "volumes": {
+    "cardano_mainnet-ipc": {
+      "external": true
+    },
+    "cardano_preprod-ipc": {
+      "external": true
+    },
+    "cardano_preview-ipc": {
+      "external": true
+    },
+    "cardano_sanchonet-ipc": {
+      "external": true
+    },
+    "postgres": {
+      "external": true,
+      "name": "dbsync_postgres"
+    }
+  },
+  "networks": {
+    "dbsync": {
+      "name": "dbsync",
+      "external": true
+    }
+  },
+  "secrets": {
+    "dbsync_db_root_password": {
+      "external": true,
+      "name": "dbsync_db_root_password"
+    },
+    "postgres_password": {
+      "external": true,
+      "name": "dbsync_db_user_password"
+    },
+    "postgres_user": {
+      "external": true,
+      "name": "dbsync_db_user"
+    },
+    "dbsync_mainnet_db": {
+      "external": true,
+      "name": "dbsync_mainnet_db"
+    },
+    "dbsync_preprod_db": {
+      "external": true,
+      "name": "dbsync_preprod_db"
+    },
+    "dbsync_preview_db": {
+      "external": true
+    },
+    "dbsync_sanchonet_db": {
+      "external": true
+    }
+  },
+  "configs": {
+    "dbsync_config.json": {
+      "file": "./dbsync-config.json"
+    }
+  },
+  "services": {
+    "preview2": {
+      "image": "ghcr.io/intersectmbo/cardano-db-sync:13.6.0.4",
+      "environment": {
+        "NETWORK": "preview",
+        "POSTGRES_HOST": "postgres2",
+        "POSTGRES_PORT": 5432,
+        "DB_SYNC_CONFIG": "/run/configs/dbsync2_config.json",
+        "DISABLE_CACHE": "",
+        "DISABLE_LEDGER": "",
+        "DISABLE_EPOCH": ""
+      },
+      "secrets": [
+        "postgres_user",
+        {
+          "source": "dbsync_preview_db",
+          "target": "postgres_db"
+        },
+        "postgres_password"
+      ],
+      "configs": [
+        {
+          "source": "dbsync_config.json",
+          "target": "/run/configs/dbsync2_config.json"
+        }
+      ],
+      "volumes": [
+        "/srv/cardano/cardano_preview-dbsync/_data/:/var/lib/cexplorer",
+        "cardano_preview-ipc:/node-ipc"
+      ],
+      "logging": {
+        "driver": "json-file",
+        "options": {
+          "max-size": "10m",
+          "max-file": "10"
+        }
+      },
+      "deploy": {
+        "labels": {
+          "co_elastic_logs/enable": "false"
+        },
+        "placement": {
+          "constraints": [
+            "node.labels.dbsync2 == true"
+          ]
+        },
+        "restart_policy": {
+          "condition": "on-failure",
+          "delay": "15s"
+        }
+      }
+    }
+  }
+}

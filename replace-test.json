@@ -1,0 +1,6 @@
+{
+  "insert_options": {
+    "preset": "full",
+    "tx_cbor": "enable"
+  }
+}
