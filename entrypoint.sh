@@ -88,12 +88,13 @@ elif [[ -z "${IS_NETWORK_ENV_SET:-}" ]]; then # dbsync config is set and network
 else  ## both NETWORK and DB_SYNC_CONFIG are set
 
   MERGED_CONFIG="$CONFIG_HOME/$NETWORK/merged-config.json"
-  # take the keys from config file and replace i the original config.
-  echo './update_json_keys.sh' "$DB_SYNC_CONFIG" \
+
+  # take the keys from config file and insert them into the default config
+  echo 'update_json' "$DB_SYNC_CONFIG" \
       "$CONFIG_HOME/$NETWORK" \
       "$MERGED_CONFIG"
   
-  ./update_json_keys.sh "$DB_SYNC_CONFIG" \
+  update_json "$DB_SYNC_CONFIG" \
       "$DEFAULT_NETWORK_CONFIG" \
       "$MERGED_CONFIG"
   DB_SYNC_CONFIG="$MERGED_CONFIG"
