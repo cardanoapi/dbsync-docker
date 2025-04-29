@@ -22,7 +22,11 @@ jobs:
       id: get_latest_tag
       run: |
         latest_tag=$(curl -s https://api.github.com/repos/intersectmbo/cardano-db-sync/releases/latest | jq -r .tag_name)
-        echo "::set-output name=tag::$latest_tag"
+        echo Target build tag: $latest_tag
+        if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
+          echo "Failed to get latest tag"; exit 1
+        fi
+        echo "tag=$latest_tag" >> $GITHUB_OUTPUT
 
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v1
