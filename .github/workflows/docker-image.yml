@@ -10,7 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    outputs:
+      tag: ${{ steps.get_latest_tag.outputs.tag }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v2
@@ -36,7 +37,7 @@ jobs:
         password: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Build and push Docker image
-      uses: docker/build-push-action@v2
+      uses: docker/build-push-action@v6
       with:
         context: .
         file: ./Dockerfile
