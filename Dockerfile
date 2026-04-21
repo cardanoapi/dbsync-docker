@@ -1,4 +1,5 @@
-# Step 1: Build Stage using musl to create a statically linked executable
+ARG DBSYNC_TAG
+
 FROM alpine:latest AS json_update
 
 # Install necessary build dependencies, including autoconf and libtool
@@ -33,8 +34,7 @@ COPY ./json_merge/update_json.c .
 # Compile the C program statically using musl-gcc
 RUN gcc -o update_json update_json.c -ljansson -static
 
-
-
+# Step 2: Config Stage to fetch environment files
 FROM ubuntu:24.04 AS config
 RUN apt-get update && apt-get install -y git \
     && git clone --depth 1 --filter=blob:none --sparse --no-checkout https://github.com/input-output-hk/cardano-playground.git \
@@ -42,10 +42,10 @@ RUN apt-get update && apt-get install -y git \
     && git sparse-checkout set docs/environments \
     && git checkout
 
-ARG DBSYNC_TAG=13.6.0.4
-
-FROM ghcr.io/intersectmbo/cardano-db-sync:${DBSYNC_TAG:-13.6.0.4}
+# Step 3: Final Stage
+# Declare ARG before FROM to allow its use in FROM
+FROM ghcr.io/intersectmbo/cardano-db-sync:${DBSYNC_TAG}
 COPY --from=json_update /app/update_json /bin/update_json
 COPY --from=config /cardano-playground/docs/environments /environments
 COPY ./entrypoint.sh /
-ENTRYPOINT ["/bin/bash", "-e", "/entrypoint.sh" ]
+ENTRYPOINT ["/bin/bash", "-e", "/entrypoint.sh"]
