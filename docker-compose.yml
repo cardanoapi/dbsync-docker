@@ -1,4 +1,5 @@
 version: "3.9"
+
 volumes:
   cardano_mainnet-ipc:
     external: true
@@ -6,71 +7,200 @@ volumes:
     external: true
   cardano_preview-ipc:
     external: true
-  cardano_sanchonet-ipc:
-    external: true
-  postgres:
-    external: true
-    name: dbsync_postgres
+  postgres_primary:
+  postgres_replica:
+
 networks:
   dbsync:
     name: dbsync
     external: true
+
 secrets:
-  dbsync_db_root_password:
-    external: true
-    name: dbsync_db_root_password
   postgres_password:
-    external: true
-    name: dbsync_db_user_password
-  postgres_user:
-    external: true
-    name: dbsync_db_user
-  dbsync_mainnet_db:
-    external: true
-    name: dbsync_mainnet_db
-  dbsync_preprod_db:
-    external: true
-    name: dbsync_preprod_db
-  dbsync_preview_db:
-    external: true
-  dbsync_sanchonet_db:
-    external: true
+    x-generated:
+      special: false
+      length: 15
+
+  dbsync_mainnet_password:
+    x-generated:
+      special: false
+      length: 15
+
+  dbsync_preprod_password:
+    x-generated:
+      special: false
+      length: 15
+
+  dbsync_preview_password:
+    x-generated:
+      special: false
+      length: 15
+
 configs:
   dbsync_config.json:
     file: ./dbsync-config.json
-services:     
-  preview2:
-    image: ghcr.io/intersectmbo/cardano-db-sync:${DBSYNC_VERSION:-13.6.0.2}
+
+  dbsync_mainnet_user:
+    x-content: dbsync_mainnet
+  dbsync_preprod_user:
+    x-content: dbsync_preprod
+  dbsync_preview_user:
+    x-content: dbsync_preview
+
+  dbsync_mainnet_db:
+    x-content: dbsync_mainnet
+  dbsync_preprod_db:
+    x-content: dbsync_preprod
+  dbsync_preview_db:
+    x-content: dbsync_preview
+
+# -----------------------------
+# TEMPLATES (anchors)
+# -----------------------------
+
+x-dbsync-common: &dbsync-common
+  image: ghcr.io/cardanoapi/cardano-db-sync:13.6.0.7
+  environment: &dbsync-env
+    POSTGRES_HOST: postgres2
+    POSTGRES_PORT: 5432
+    DB_SYNC_CONFIG: /run/configs/dbsync_config.json
+    DISABLE_CACHE: ""
+    DISABLE_LEDGER: ""
+    DISABLE_EPOCH: ""
+  configs:
+    - source: dbsync_config.json
+      target: /run/configs/dbsync_config.json
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "10m"
+      max-file: "10"
+  deploy:
+    labels:
+      "co_elastic_logs/enable": "false"
+    placement:
+      constraints:
+        - node.labels.dbsync2 == true
+    restart_policy:
+      delay: 15s
+
+x-postgres-common: &postgres-common
+  image: postgres:18.3
+  environment:
+    - POSTGRES_LOGGING=true
+    - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
+  secrets:
+    - postgres_password
+  volumes:
+    - type: tmpfs
+      target: /dev/shm
+      tmpfs:
+        size: 8589934592
+  deploy:
+    labels:
+      "co_elastic_logs/enable": "false"
+    restart_policy:
+      delay: 15s
+
+# -----------------------------
+# SERVICES
+# -----------------------------
+
+services:
+
+  mainnet:
+    <<: *dbsync-common
     environment:
-      NETWORK: preview
-      POSTGRES_HOST: postgres2
-      POSTGRES_PORT: 5432
-      DB_SYNC_CONFIG: /run/configs/dbsync2_config.json
-      DISABLE_CACHE: ""
-      DISABLE_LEDGER: ""
-      DISABLE_EPOCH: ""
-    secrets:
-      - postgres_user
-      - source: dbsync_preview_db
-        target: postgres_db
-      - postgres_password
+      <<: *dbsync-env
+      NETWORK: mainnet
     configs:
       - source: dbsync_config.json
-        target: /run/configs/dbsync2_config.json
+        target: /run/configs/dbsync_config.json
+      - source: dbsync_mainnet_user
+        target: postgres_user
+      - source: dbsync_mainnet_db
+        target: postgres_db
+    secrets:
+      - source: dbsync_mainnet_password
+        target: postgres_password
+    volumes:
+      - /srv/cardano/cardano_mainnet-dbsync/_data/:/var/lib/cexplorer
+      - cardano_mainnet-ipc:/node-ipc
+
+  preview:
+    <<: *dbsync-common
+    environment:
+      <<: *dbsync-env
+      NETWORK: preview
+    configs:
+      - source: dbsync_config.json
+        target: /run/configs/dbsync_config.json
+      - source: dbsync_preview_user
+        target: postgres_user
+      - source: dbsync_preview_db
+        target: postgres_db
+    secrets:
+      - source: dbsync_preview_password
+        target: postgres_password
     volumes:
       - /srv/cardano/cardano_preview-dbsync/_data/:/var/lib/cexplorer
       - cardano_preview-ipc:/node-ipc
-    logging:
-      driver: "json-file" 
-      options:
-        max-size: "10m"
-        max-file: "10"
+
+  preprod:
+    <<: *dbsync-common
+    environment:
+      <<: *dbsync-env
+      NETWORK: preprod
+    configs:
+      - source: dbsync_config.json
+        target: /run/configs/dbsync_config.json
+      - source: dbsync_preprod_user
+        target: postgres_user
+      - source: dbsync_preprod_db
+        target: postgres_db
+    secrets:
+      - source: dbsync_preprod_password
+        target: postgres_password
+    volumes:
+      - /srv/cardano/cardano_preprod-dbsync/_data/:/var/lib/cexplorer
+      - cardano_preprod-ipc:/node-ipc
+
+  postgres2:
+    <<: *postgres-common
+    networks:
+      default:
+      dbsync:
+        aliases:
+          - dbsync2
+          - pg2
+    volumes:
+      - postgres_primary:/var/lib/postgresql/data
     deploy:
-      labels:
-        "co_elastic_logs/enable": "false"
       placement:
         constraints:
           - node.labels.dbsync2 == true
-      restart_policy:
-        condition: on-failure
-        delay: 15s
+    ports:
+      - target: 5432
+        published: 8433
+        protocol: tcp
+        mode: host
+
+  replica:
+    <<: *postgres-common
+    networks:
+      dbsync:
+        aliases:
+          - dbsync-replica
+          - dbsync-read-replica
+          - read-replica
+    volumes:
+      - postgres_replica:/var/lib/postgresql/data
+    deploy:
+      placement:
+        constraints:
+          - node.labels.dbsync1 == true
+    ports:
+      - target: 5432
+        published: 8433
+        protocol: tcp
+        mode: host
