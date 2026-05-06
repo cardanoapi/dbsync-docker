@@ -9,6 +9,11 @@ on:
     - cron: '0 0 * * *'  # Runs daily at midnight
 
   workflow_dispatch:
+    inputs:
+      dbsync_ref:
+        description: 'cardano-db-sync tag or commit SHA to build (defaults to latest release)'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -18,7 +23,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.get_latest_tag.outputs.tag }}
+      dbsync_ref: ${{ steps.resolve_dbsync_ref.outputs.dbsync_ref }}
+      image_tag: ${{ steps.resolve_dbsync_ref.outputs.image_tag }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -26,15 +32,43 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Get latest dbsync tag
-      id: get_latest_tag
+    - name: Resolve dbsync ref
+      id: resolve_dbsync_ref
+      env:
+        DBSYNC_REF_INPUT: ${{ github.event.inputs.dbsync_ref }}
       run: |
-        latest_tag=$(curl -s https://api.github.com/repos/intersectmbo/cardano-db-sync/releases/latest | jq -r .tag_name)
-        echo Target build tag: $latest_tag
-        if [[ -z "$latest_tag" || "$latest_tag" == "null" ]]; then
-          echo "Failed to get latest tag"; exit 1
+        dbsync_ref=$(printf '%s' "$DBSYNC_REF_INPUT" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+        if [[ -z "$dbsync_ref" ]]; then
+          dbsync_ref=$(curl -fsSL https://api.github.com/repos/intersectmbo/cardano-db-sync/releases/latest | jq -r .tag_name)
+          if [[ -z "$dbsync_ref" || "$dbsync_ref" == "null" ]]; then
+            echo "Failed to get latest tag"; exit 1
+          fi
+        elif git ls-remote --exit-code --tags https://github.com/intersectmbo/cardano-db-sync.git "refs/tags/$dbsync_ref" >/dev/null 2>&1; then
+          echo "Found cardano-db-sync tag: $dbsync_ref"
+        else
+          if [[ ! "$dbsync_ref" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+            echo "dbsync_ref must be a cardano-db-sync tag or commit SHA: $dbsync_ref"
+            exit 1
+          fi
+
+          status_code=$(curl -s -o /tmp/dbsync-commit.json -w "%{http_code}" "https://api.github.com/repos/intersectmbo/cardano-db-sync/commits/$dbsync_ref")
+          if [[ "$status_code" != "200" ]]; then
+            echo "dbsync_ref must be a cardano-db-sync tag or commit SHA: $dbsync_ref"
+            exit 1
+          fi
         fi
-        echo "tag=$latest_tag" >> $GITHUB_OUTPUT
+
+        image_tag=$(printf '%s' "$dbsync_ref" | sed -E 's/[^A-Za-z0-9_.-]+/-/g; s/^[.-]+//; s/[.-]+$//')
+        image_tag=${image_tag:0:128}
+        if [[ -z "$image_tag" ]]; then
+          echo "Unable to derive Docker image tag from dbsync ref: $dbsync_ref"; exit 1
+        fi
+
+        echo "Target dbsync ref: $dbsync_ref"
+        echo "Target image tag: $image_tag"
+        echo "dbsync_ref=$dbsync_ref" >> $GITHUB_OUTPUT
+        echo "image_tag=$image_tag" >> $GITHUB_OUTPUT
 
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v3
@@ -49,6 +83,6 @@ jobs:
         context: .
         file: ./Dockerfile
         push: true
-        tags: ghcr.io/${{ github.repository_owner }}/cardano-db-sync:${{ steps.get_latest_tag.outputs.tag }}
+        tags: ghcr.io/${{ github.repository_owner }}/cardano-db-sync:${{ steps.resolve_dbsync_ref.outputs.image_tag }}
         build-args: |
-          DBSYNC_TAG=${{ steps.get_latest_tag.outputs.tag }}
+          DBSYNC_TAG=${{ steps.resolve_dbsync_ref.outputs.dbsync_ref }}
